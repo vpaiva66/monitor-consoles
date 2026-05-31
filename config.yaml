@@ -15,9 +15,13 @@ searches:
   - { model: "Nintendo DS",     query: "nintendo ds" }
   - { model: "Nintendo Switch", query: "nintendo switch" }
   - { model: "Xbox 360",        query: "xbox 360" }
-  - { model: "Xbox One X",      query: "xbox one x" }
+  - { model: "Xbox One",      query: "xbox one" }
+  - { model: "Xbox Series",   query: "xbox series" }
   - { model: "PS5",             query: "playstation 5" }
   - { model: "PS4",             query: "playstation 4" }
+  - { model: "PS3",             query: "playstation 3" }
+  - { model: "PS Vita",          query: "playstation vita" }
+  -  { model: "PSP",              query: "playstation portable" }
 
 collector:
   headless: true
@@ -25,7 +29,7 @@ collector:
   # (necessário no Ubuntu 26.04, onde o Playwright não baixa Chromium próprio).
   # Deixe vazio ("") para usar o Chromium empacotado pelo Playwright.
   browser_channel: "chrome"
-  pages_per_search: 1          # 1 página basta com sf=1 (mais recentes vêm primeiro); leve no VPS
+  pages_per_search: 2          # 2 páginas/busca = mais cobertura (rodando local, com folga de RAM)
   min_delay_seconds: 4         # atraso mínimo entre requisições (parecer humano)
   max_delay_seconds: 9         # atraso máximo
   nav_timeout_seconds: 45
@@ -36,7 +40,7 @@ llm:
   # API key), o sistema cai para a classificação por regex (core/normalize.py).
   enabled: true
   model: "claude-haiku-4-5"
-  batch_size: 20              # nº de títulos por chamada (lote = mais barato)
+  batch_size: 40             # nº de títulos por chamada (lote = mais barato)
   # api_key vazio = usa a variável de ambiente ANTHROPIC_API_KEY (recomendado)
   api_key: ""
 
@@ -52,7 +56,7 @@ scheduler:
   # Frequência da varredura, em minutos.
   #   teste:     5     (de 5 em 5 min)
   #   produção:  720   (de 12 em 12 horas)
-  interval_minutes: 360
+  interval_minutes: 180
 
 telegram:
   enabled: true                # com token/chat_id no .env, deixe true
