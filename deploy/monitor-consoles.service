@@ -1,0 +1,27 @@
+# Alternativa SEM Docker: roda o scheduler como serviço systemd no VPS.
+#
+# Instalação:
+#   1. Ajuste os caminhos abaixo (WorkingDirectory, ExecStart, User).
+#   2. sudo cp deploy/monitor-consoles.service /etc/systemd/system/
+#   3. sudo systemctl daemon-reload
+#   4. sudo systemctl enable --now monitor-consoles
+#   5. journalctl -u monitor-consoles -f      # ver logs ao vivo
+#
+# Pré-requisitos no VPS: o .venv criado e `playwright install chrome` já rodado.
+
+[Unit]
+Description=Monitor de precos de consoles (OLX -> Telegram)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/monitor-consoles
+EnvironmentFile=/opt/monitor-consoles/.env
+ExecStart=/opt/monitor-consoles/.venv/bin/python scheduler.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

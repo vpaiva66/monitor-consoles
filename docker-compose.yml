@@ -1,0 +1,9 @@
+services:
+  monitor:
+    build: .
+    container_name: monitor-consoles
+    restart: unless-stopped
+    env_file: .env            # ANTHROPIC_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+    volumes:
+      - ./data:/app/data      # persiste o banco (histórico de preços) entre reinícios
+    # Sem portas expostas: o serviço só faz requisições de saída.

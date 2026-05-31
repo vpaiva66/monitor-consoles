@@ -1,0 +1,67 @@
+# ─── Monitor de preços de consoles (OLX) ─────────────────────────────────────
+# Ajuste aqui as buscas, a sensibilidade do alerta e as credenciais.
+
+region:
+  # Caminho de região da OLX. A URL final fica:
+  #   https://www.olx.com.br{category_path}/{region_path}?q={query}
+  # Confirmar/ajustar após a 1ª execução real (ver collectors/olx.py).
+  region_path: "estado-mg/belo-horizonte-e-regiao/pampulha"
+  category_path: "/games"
+
+# Cada item vira uma busca. `query` é o termo digitado na OLX;
+# `model` é o rótulo canônico usado para agrupar preços e calcular a mediana.
+searches:
+  - { model: "Nintendo 3DS",    query: "nintendo 3ds" }
+  - { model: "Nintendo DS",     query: "nintendo ds" }
+  - { model: "Nintendo Switch", query: "nintendo switch" }
+  - { model: "Xbox 360",        query: "xbox 360" }
+  - { model: "Xbox One X",      query: "xbox one x" }
+  - { model: "PS5",             query: "playstation 5" }
+  - { model: "PS4",             query: "playstation 4" }
+
+collector:
+  headless: true
+  # Navegador a usar. Deixe "chrome" para usar o Google Chrome do sistema
+  # (necessário no Ubuntu 26.04, onde o Playwright não baixa Chromium próprio).
+  # Deixe vazio ("") para usar o Chromium empacotado pelo Playwright.
+  browser_channel: "chrome"
+  pages_per_search: 2          # quantas páginas de resultados varrer por busca
+  min_delay_seconds: 4         # atraso mínimo entre requisições (parecer humano)
+  max_delay_seconds: 9         # atraso máximo
+  nav_timeout_seconds: 45
+
+llm:
+  # Classificação dos anúncios via Claude (Haiku). Se desativar (ou faltar a
+  # API key), o sistema cai para a classificação por regex (core/normalize.py).
+  enabled: true
+  model: "claude-haiku-4-5"
+  batch_size: 20              # nº de títulos por chamada (lote = mais barato)
+  # api_key vazio = usa a variável de ambiente ANTHROPIC_API_KEY (recomendado)
+  api_key: ""
+
+detector:
+  # Sensibilidade do alerta (moderada por padrão).
+  iqr_k: 1.5                   # alerta se preço < mediana - k*IQR. Menor = mais alertas.
+  min_samples: 8               # nº mínimo de anúncios do modelo antes de confiar na mediana
+  window_days: 30              # janela de histórico considerada "preço normal"
+  # Anti-cilada: descarta anúncios baratos demais (provável golpe/peça/defeito).
+  floor_ratio: 0.30            # ignora preços abaixo de 30% da mediana
+
+scheduler:
+  # Frequência da varredura, em minutos.
+  #   teste:     5     (de 5 em 5 min)
+  #   produção:  720   (de 12 em 12 horas)
+  interval_minutes: 5
+
+telegram:
+  enabled: true                # com token/chat_id no .env, deixe true
+  # Deixe vazios para usar TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID do .env
+  # (recomendado). Rode `python setup_telegram.py` para descobrir o chat_id.
+  bot_token: ""
+  chat_id: ""
+
+storage:
+  db_path: "data/listings.db"
+  # Anúncios não vistos há mais de N dias são apagados a cada varredura.
+  # Mantenha >= detector.window_days (a mediana só usa essa janela mesmo).
+  retention_days: 30
