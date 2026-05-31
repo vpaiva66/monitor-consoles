@@ -143,56 +143,105 @@ def _parse_next_data(html: str, debug: bool = False) -> List[Listing]:
     return listings
 
 
-async def _fetch_html(url: str, headless: bool, timeout: int,
-                      channel: Optional[str] = None) -> Optional[str]:
-    async with async_playwright() as p:
-        # channel="chrome" usa o Google Chrome do sistema (necessário quando o
-        # Playwright não tem Chromium empacotado p/ a distro, ex: Ubuntu 26.04).
-        launch_kwargs = {"headless": headless}
-        if channel:
-            launch_kwargs["channel"] = channel
-        browser = await p.chromium.launch(**launch_kwargs)
-        context = await browser.new_context(
-            user_agent=_UA,
-            locale="pt-BR",
-            viewport={"width": 1366, "height": 768},
-        )
-        page = await context.new_page()
+# Flags de estabilidade do Chrome em container/VPS pequeno. --disable-dev-shm-usage
+# evita crash por /dev/shm cheio; --disable-gpu/--no-sandbox reduzem superfície de
+# falha em ambiente headless sem GPU.
+_CHROME_ARGS = [
+    "--disable-dev-shm-usage",
+    "--disable-gpu",
+    "--no-sandbox",
+    "--disable-extensions",
+]
+
+
+async def _launch_browser(p, headless: bool, channel: Optional[str]):
+    launch_kwargs = {"headless": headless, "args": _CHROME_ARGS}
+    if channel:  # "chrome" usa o Google Chrome do sistema
+        launch_kwargs["channel"] = channel
+    return await p.chromium.launch(**launch_kwargs)
+
+
+async def _new_context(browser):
+    return await browser.new_context(
+        user_agent=_UA,
+        locale="pt-BR",
+        viewport={"width": 1366, "height": 768},
+    )
+
+
+async def _fetch_one(context, url: str, timeout: int) -> str:
+    """Carrega uma URL num contexto já aberto e devolve o HTML. Levanta em erro."""
+    page = await context.new_page()
+    try:
+        await page.goto(url, timeout=timeout * 1000, wait_until="domcontentloaded")
+        await page.wait_for_timeout(1500)  # deixa o Next hidratar
+        return await page.content()
+    finally:
         try:
-            await page.goto(url, timeout=timeout * 1000, wait_until="domcontentloaded")
-            # dá um tempo para o Next hidratar / conteúdo aparecer
-            await page.wait_for_timeout(1500)
-            return await page.content()
-        except Exception as e:  # noqa: BLE001
-            log.warning("Falha ao carregar %s: %s", url, e)
-            return None
-        finally:
-            await browser.close()
+            await page.close()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 async def collect(search: Dict, region: Dict, cfg: Dict, debug: bool = False) -> List[Listing]:
-    """Coleta anúncios de uma busca (todas as páginas configuradas)."""
+    """Coleta anúncios de uma busca (todas as páginas configuradas).
+
+    Reusa UM navegador para todas as páginas da busca (menos rotatividade de
+    processos) e, se o Chrome cair (SIGSEGV em VPS com pouca memória), relança o
+    navegador e tenta de novo, sem derrubar a varredura inteira.
+    """
     all_listings: List[Listing] = []
     pages = int(cfg.get("pages_per_search", 1))
-    for page in range(1, pages + 1):
-        url = build_url(
-            region["category_path"], region["region_path"], search["query"], page
-        )
-        log.info("Coletando [%s] pág.%d: %s", search["model"], page, url)
-        html = await _fetch_html(
-            url,
-            cfg.get("headless", True),
-            cfg.get("nav_timeout_seconds", 45),
-            channel=cfg.get("browser_channel") or None,
-        )
-        if not html:
-            continue
-        listings = _parse_next_data(html, debug=debug)
-        log.info("  -> %d anúncios brutos", len(listings))
-        all_listings.extend(listings)
+    headless = cfg.get("headless", True)
+    channel = cfg.get("browser_channel") or None
+    timeout = cfg.get("nav_timeout_seconds", 45)
+    max_retries = int(cfg.get("max_retries", 2))
 
-        # atraso humano entre páginas
-        delay = random.uniform(cfg.get("min_delay_seconds", 4), cfg.get("max_delay_seconds", 9))
-        await asyncio.sleep(delay)
+    async with async_playwright() as p:
+        browser = await _launch_browser(p, headless, channel)
+        context = await _new_context(browser)
+        try:
+            for page in range(1, pages + 1):
+                url = build_url(
+                    region["category_path"], region["region_path"], search["query"], page
+                )
+                log.info("Coletando [%s] pág.%d: %s", search["model"], page, url)
+
+                html = None
+                for attempt in range(1, max_retries + 2):  # 1 tentativa + N retries
+                    try:
+                        html = await _fetch_one(context, url, timeout)
+                        break
+                    except Exception as e:  # noqa: BLE001
+                        log.warning("Falha em %s (tentativa %d/%d): %s",
+                                    url, attempt, max_retries + 1, e)
+                        # Se o navegador caiu, relança browser + contexto.
+                        if not browser.is_connected():
+                            log.warning("Navegador desconectado; relançando...")
+                            try:
+                                await browser.close()
+                            except Exception:  # noqa: BLE001
+                                pass
+                            browser = await _launch_browser(p, headless, channel)
+                            context = await _new_context(browser)
+                        await asyncio.sleep(2 * attempt)  # backoff antes de retry
+
+                if not html:
+                    log.warning("Pulando %s após esgotar tentativas.", url)
+                    continue
+
+                listings = _parse_next_data(html, debug=debug)
+                log.info("  -> %d anúncios brutos", len(listings))
+                all_listings.extend(listings)
+
+                # atraso humano entre páginas
+                delay = random.uniform(cfg.get("min_delay_seconds", 4),
+                                       cfg.get("max_delay_seconds", 9))
+                await asyncio.sleep(delay)
+        finally:
+            try:
+                await browser.close()
+            except Exception:  # noqa: BLE001
+                pass
 
     return all_listings

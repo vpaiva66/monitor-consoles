@@ -25,10 +25,11 @@ collector:
   # (necessário no Ubuntu 26.04, onde o Playwright não baixa Chromium próprio).
   # Deixe vazio ("") para usar o Chromium empacotado pelo Playwright.
   browser_channel: "chrome"
-  pages_per_search: 2          # quantas páginas de resultados varrer por busca
+  pages_per_search: 1          # 1 página basta com sf=1 (mais recentes vêm primeiro); leve no VPS
   min_delay_seconds: 4         # atraso mínimo entre requisições (parecer humano)
   max_delay_seconds: 9         # atraso máximo
   nav_timeout_seconds: 45
+  max_retries: 2               # re-tentativas se o Chrome cair (SIGSEGV em VPS pequeno)
 
 llm:
   # Classificação dos anúncios via Claude (Haiku). Se desativar (ou faltar a
@@ -51,7 +52,7 @@ scheduler:
   # Frequência da varredura, em minutos.
   #   teste:     5     (de 5 em 5 min)
   #   produção:  720   (de 12 em 12 horas)
-  interval_minutes: 5
+  interval_minutes: 360
 
 telegram:
   enabled: true                # com token/chat_id no .env, deixe true
