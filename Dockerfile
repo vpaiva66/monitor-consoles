@@ -2,6 +2,11 @@
 FROM mcr.microsoft.com/playwright/python:v1.44.0-jammy
 
 WORKDIR /app
+
+# tzdata: necessário para TZ=America/Sao_Paulo resolver (zoneinfo).
+RUN apt-get update && apt-get install -y --no-install-recommends tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

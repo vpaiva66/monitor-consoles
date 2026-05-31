@@ -7,6 +7,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+from datetime import timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -20,6 +23,21 @@ logging.basicConfig(
 log = logging.getLogger("scheduler")
 
 
+def _resolve_timezone():
+    """TZ do ambiente, com fallback seguro para UTC se o tzdata não existir.
+
+    Evita o crash do APScheduler/tzlocal quando TZ=America/Sao_Paulo está setado
+    mas o pacote tzdata não está instalado no container.
+    """
+    tz_name = os.getenv("TZ")
+    if tz_name:
+        try:
+            return ZoneInfo(tz_name)
+        except (ZoneInfoNotFoundError, Exception):  # noqa: BLE001
+            log.warning("TZ=%s indisponível (tzdata ausente?); usando UTC.", tz_name)
+    return timezone.utc
+
+
 async def _job(cfg: dict) -> None:
     try:
         await run_once(cfg)
@@ -30,7 +48,7 @@ async def _job(cfg: dict) -> None:
 async def main() -> None:
     cfg = load_config()
     interval = cfg["scheduler"]["interval_minutes"]
-    scheduler = AsyncIOScheduler()
+    scheduler = AsyncIOScheduler(timezone=_resolve_timezone())
     # coalesce + max_instances=1: se uma varredura demorar mais que o intervalo,
     # não acumula execuções sobrepostas (importante com intervalos curtos no teste).
     scheduler.add_job(_job, "interval", minutes=interval, args=[cfg],
