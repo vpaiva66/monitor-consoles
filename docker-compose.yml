@@ -3,11 +3,9 @@ services:
     build: .
     container_name: monitor-consoles
     restart: unless-stopped
-    env_file: .env            # ANTHROPIC_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+    env_file: .env
     environment:
-      - TZ=America/Sao_Paulo  # logs no horário de Brasília (evita warning do tzlocal)
-    # Rodando local (PC com folga de RAM): shm generoso evita qualquer crash do Chrome.
+      - TZ=America/Sao_Paulo
     shm_size: "1gb"
     volumes:
-      - ./data:/app/data      # persiste o banco (histórico de preços) entre reinícios
-    # Sem portas expostas: o serviço só faz requisições de saída.
+      - ./data:/app/data

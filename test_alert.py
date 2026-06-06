@@ -1,12 +1,3 @@
-"""Mock de oportunidade — envia 1 alerta de teste pelo Telegram real.
-
-Não toca na lógica de produção: apenas monta um anúncio + oportunidade fictícios
-e os manda pelo mesmo TelegramNotifier usado no pipeline, para você validar a
-formatação e a entrega da mensagem sem esperar o aquecimento.
-
-Uso:
-    python test_alert.py
-"""
 from __future__ import annotations
 
 import os
@@ -34,7 +25,6 @@ def main() -> None:
         enabled=cfg["telegram"]["enabled"],
     )
 
-    # Anúncio fictício de uma "pechincha" clara.
     listing = Listing(
         id="mock-0001",
         source="olx",

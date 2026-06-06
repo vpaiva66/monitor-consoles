@@ -1,14 +1,3 @@
-"""Ajuda a configurar o Telegram: descobre seu chat_id e testa o envio.
-
-Pré-requisitos:
-  1. Crie um bot com o @BotFather e copie o token.
-  2. Coloque o token em TELEGRAM_BOT_TOKEN no arquivo .env.
-  3. No Telegram, ABRA seu bot e mande qualquer mensagem (ex: "oi").
-  4. Rode:  python setup_telegram.py
-
-O script lê as mensagens recentes do bot (getUpdates), mostra o chat_id de
-quem falou com ele, e envia uma mensagem de teste para confirmar.
-"""
 from __future__ import annotations
 
 import os
@@ -40,15 +29,13 @@ def main() -> None:
         print("❌ TELEGRAM_BOT_TOKEN não está no .env. Preencha e rode de novo.")
         sys.exit(1)
 
-    # Confirma que o token é válido e mostra o nome do bot.
     try:
         me = _call(token, "getMe")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         print(f"❌ Token inválido ou erro de rede: {e}")
         sys.exit(1)
     print(f"✅ Bot conectado: @{me['username']} ({me['first_name']})")
 
-    # Descobre o chat_id a partir das mensagens recebidas.
     chat_env = os.getenv("TELEGRAM_CHAT_ID", "").strip()
     updates = _call(token, "getUpdates")
     chats = {}
@@ -71,14 +58,13 @@ def main() -> None:
         for cid, nome in chats.items():
             print(f"   chat_id = {cid}   ({nome})")
 
-    # Define o destino do teste: .env tem prioridade; senão o 1º descoberto.
     target = chat_env or str(next(iter(chats)))
     print(f"\nEnviando mensagem de teste para chat_id={target} ...")
     try:
         _call(token, "sendMessage", chat_id=target,
               text="✅ Monitor de consoles conectado! Você receberá os alertas aqui.")
         print("✅ Mensagem enviada! Confira seu Telegram.")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         print(f"❌ Falha ao enviar: {e}")
         print("   Verifique se você JÁ mandou uma mensagem ao bot primeiro.")
         sys.exit(1)

@@ -1,10 +1,9 @@
-"""Persistência em SQLite: histórico de anúncios e controle de dedupe/alertas."""
 from __future__ import annotations
 
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 from .models import Listing
 
@@ -42,14 +41,12 @@ class Storage:
             CREATE INDEX IF NOT EXISTS idx_listings_seen  ON listings(last_seen);
             """
         )
-        # Migração: adiciona `variant` se o banco veio de uma versão anterior.
         cols = [r[1] for r in self.conn.execute("PRAGMA table_info(listings)").fetchall()]
         if "variant" not in cols:
             self.conn.execute("ALTER TABLE listings ADD COLUMN variant TEXT")
         self.conn.commit()
 
     def upsert(self, listing: Listing) -> bool:
-        """Insere ou atualiza um anúncio. Retorna True se for NOVO (não visto antes)."""
         now = _now()
         exists = self.conn.execute(
             "SELECT 1 FROM listings WHERE id = ?", (listing.id,)
@@ -73,7 +70,6 @@ class Storage:
         return not exists
 
     def prices_for_model(self, model: str, window_days: int) -> List[int]:
-        """Preços de um modelo (todas as variantes) na janela."""
         cutoff = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat()
         cur = self.conn.execute(
             """SELECT price FROM listings
@@ -84,7 +80,6 @@ class Storage:
         return [row["price"] for row in cur.fetchall()]
 
     def prices_for_model_variant(self, model: str, variant: str, window_days: int) -> List[int]:
-        """Preços de um modelo + variante específica na janela."""
         cutoff = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat()
         cur = self.conn.execute(
             """SELECT price FROM listings
@@ -95,14 +90,9 @@ class Storage:
         return [row["price"] for row in cur.fetchall()]
 
     def get_known(self, ids: List[str]) -> dict:
-        """{id: (model, variant)} para os ids já presentes no banco.
-
-        Inclui anúncios já vistos que NÃO são console (model=None) — assim eles
-        não voltam a ser reclassificados pela LLM.
-        """
         out: dict = {}
         ids = list(ids)
-        for i in range(0, len(ids), 500):  # respeita o limite de variáveis do SQLite
+        for i in range(0, len(ids), 500):
             chunk = ids[i:i + 500]
             ph = ",".join("?" * len(chunk))
             rows = self.conn.execute(
@@ -113,7 +103,6 @@ class Storage:
         return out
 
     def prune(self, retention_days: int) -> int:
-        """Remove anúncios não vistos há mais de `retention_days`. Retorna quantos."""
         cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
         cur = self.conn.execute("DELETE FROM listings WHERE last_seen < ?", (cutoff,))
         self.conn.commit()

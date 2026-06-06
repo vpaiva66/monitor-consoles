@@ -1,7 +1,7 @@
-"""Envio de alertas via Telegram Bot API (sem dependências pesadas — usa httpx)."""
 from __future__ import annotations
 
 import logging
+import time
 
 import httpx
 
@@ -30,24 +30,28 @@ class TelegramNotifier:
             f"🔗 {l.url}"
         ).replace(",", ".")
 
-    def send(self, opp: Opportunity) -> bool:
+    def send(self, opp: Opportunity, attempts: int = 3) -> bool:
         text = self._format(opp)
         if not self.enabled:
             log.info("[telegram desativado] %s", text.replace("\n", " | "))
             return False
-        try:
-            r = httpx.post(
-                f"https://api.telegram.org/bot{self.bot_token}/sendMessage",
-                json={
-                    "chat_id": self.chat_id,
-                    "text": text,
-                    "parse_mode": "HTML",
-                    "disable_web_page_preview": False,
-                },
-                timeout=15,
-            )
-            r.raise_for_status()
-            return True
-        except Exception as e:  # noqa: BLE001
-            log.warning("Falha ao enviar Telegram: %s", e)
-            return False
+        for attempt in range(1, attempts + 1):
+            try:
+                r = httpx.post(
+                    f"https://api.telegram.org/bot{self.bot_token}/sendMessage",
+                    json={
+                        "chat_id": self.chat_id,
+                        "text": text,
+                        "parse_mode": "HTML",
+                        "disable_web_page_preview": False,
+                    },
+                    timeout=15,
+                )
+                r.raise_for_status()
+                return True
+            except Exception as e:
+                log.warning("Falha ao enviar Telegram (tentativa %d/%d): %s",
+                            attempt, attempts, e)
+                if attempt < attempts:
+                    time.sleep(3 * attempt)
+        return False

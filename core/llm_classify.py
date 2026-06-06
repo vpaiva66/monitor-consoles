@@ -1,16 +1,3 @@
-"""Classificação de anúncios via Claude (Haiku) — modelo + variante.
-
-Para cada anúncio novo, o modelo lê o TÍTULO e decide:
-  - qual console é (rótulo canônico), ou NENHUM (acessório/jogo/peça/fora do escopo);
-  - qual a VARIANTE (Slim/Pro/Fat/OLED/Lite...), ou DESCONHECIDO quando o título
-    não deixa claro (muito comum — e tudo bem, o detector lida com isso).
-
-Por que LLM: a regex descartava consoles legítimos só porque o título dizia
-"com 2 controles"/"com jogos", e não consegue inferir variante com segurança.
-
-Eficiência: classifica em LOTE, saída estruturada via tool use forçado, prompt
-caching nas instruções, e fallback para regex (core.normalize) se faltar key/SDK.
-"""
 from __future__ import annotations
 
 import logging
@@ -21,19 +8,21 @@ from core import normalize as regex_normalize
 
 log = logging.getLogger("llm.classify")
 
-_NENHUM = "NENHUM"            # não é um dos consoles / é acessório/jogo/peça
-_DESCONHECIDO = "DESCONHECIDO"  # variante não identificável pelo título
+_NENHUM = "NENHUM"
+_DESCONHECIDO = "DESCONHECIDO"
 
-# Variantes esperadas por modelo. Usado para guiar a LLM e validar a resposta.
-# (mesma string pode aparecer em modelos diferentes — o modelo desambigua.)
 VARIANTS: Dict[str, List[str]] = {
     "Nintendo 3DS":    ["3DS", "3DS XL", "New 3DS", "New 3DS XL", "2DS", "New 2DS XL"],
     "Nintendo DS":     ["DS", "DS Lite", "DSi", "DSi XL"],
     "Nintendo Switch": ["V1/V2", "OLED", "Lite"],
     "Xbox 360":        ["Fat", "Slim", "Super Slim"],
-    "Xbox One X":      ["One", "One S", "One X"],
+    "Xbox One":        ["Fat", "One S", "One X"],
+    "Xbox Series":     ["Series S", "Series X"],
     "PS5":             ["Fat", "Slim", "Digital", "Pro"],
     "PS4":             ["Fat", "Slim", "Pro"],
+    "PS3":             ["Fat", "Slim", "Super Slim"],
+    "PS Vita":         ["Fat", "Slim"],
+    "PSP":             ["1000", "2000", "3000", "Go"],
 }
 
 
@@ -72,6 +61,8 @@ def _build_system(valid_models: List[str]) -> str:
         "explícitas de variante. 'PS4' sozinho, sem mais nada, é variante "
         f"\"{_DESCONHECIDO}\".\n"
         "- Cuidado: 'Nintendo DS' ≠ 'Nintendo 3DS'; 'PS4' ≠ 'PS5'.\n"
+        "- Cuidado: 'Xbox One X' é Xbox One (variante One X), NÃO é Xbox Series X. "
+        "'Xbox Series S/X' é a geração seguinte (Xbox Series).\n"
         "- Responda SEMPRE chamando a ferramenta classify_listings, um item por "
         "índice recebido."
     )
@@ -111,7 +102,6 @@ def _build_tool(valid_models: List[str]) -> dict:
     }
 
 
-# Tipo do mapa de saída: id -> (model|None, variant|None)
 ClassMap = Dict[str, Tuple[Optional[str], Optional[str]]]
 
 
@@ -127,7 +117,7 @@ class LLMClassifier:
         try:
             import anthropic
             self._client = anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             log.warning("SDK Anthropic indisponível (%s) — usando fallback regex.", e)
 
     @property
@@ -135,7 +125,6 @@ class LLMClassifier:
         return self._client is not None
 
     def _normalize_variant(self, model: str, variant: Optional[str]) -> Optional[str]:
-        """Mantém a variante só se for válida para o modelo; senão None."""
         if variant and variant != _DESCONHECIDO and variant in VARIANTS.get(model, []):
             return variant
         return None
@@ -176,14 +165,13 @@ class LLMClassifier:
             chunk = listings[start:start + self.batch_size]
             try:
                 result.update(self._classify_chunk(chunk))
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 log.warning("Erro no lote LLM (%s) — fallback regex neste lote.", e)
                 result.update(regex_fallback(chunk))
         return result
 
 
 def regex_fallback(listings: List[Listing]) -> ClassMap:
-    """Classificação por regex (sem variante) quando a LLM está indisponível."""
     out: ClassMap = {}
     for l in listings:
         n = regex_normalize.normalize(l)
